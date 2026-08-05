@@ -207,7 +207,7 @@ boolean run_first_pass(char file_name[], memory_state *state, symbol_node **sym_
         curr_entry = curr_entry->next;
     }
 
-    if (state->ic + state->dc - 1 > MAX_ADDRESS) {
+    if ((unsigned long)state->ic + (unsigned long)state->dc - 1UL > MAX_ADDRESS) {
         printf("error total memory capacity address exceeded limits\n");
         has_error = true;
     }
