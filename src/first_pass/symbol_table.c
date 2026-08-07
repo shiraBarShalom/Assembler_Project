@@ -16,6 +16,7 @@ symbol_node* add_symbol(symbol_node **head, char name[], int address, symbol_typ
     strcpy(new_symbol->name, name);
     new_symbol->address = address;
     new_symbol->type = type;
+    new_symbol->is_entry = false;
 
     new_symbol->next = *head;
     *head = new_symbol;
@@ -25,11 +26,11 @@ symbol_node* add_symbol(symbol_node **head, char name[], int address, symbol_typ
 
 /*
  * function: add_reference
- * input: pointer to head name address and type
+ * input: pointer to head name instruction address line number and type
  * output: true if successful false if allocation fails
  * operation: adds new unresolved reference to list
  */
-boolean add_reference(reference_node **head, char name[], int address, ref_type type) {
+boolean add_reference(reference_node **head, char name[], int instruction_address, int line_num, ref_type type) {
     reference_node *new_ref = (reference_node*)malloc(sizeof(reference_node));
 
     if (new_ref == NULL) {
@@ -37,7 +38,8 @@ boolean add_reference(reference_node **head, char name[], int address, ref_type 
     }
 
     strcpy(new_ref->name, name);
-    new_ref->address = address;
+    new_ref->instruction_address = instruction_address;
+    new_ref->line_num = line_num;
     new_ref->type = type;
 
     new_ref->next = *head;

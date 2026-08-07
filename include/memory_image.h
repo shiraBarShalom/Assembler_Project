@@ -14,20 +14,40 @@
 #define INITIAL_CAPACITY 128
 
 /*
+ * structure: code_word
+ * operation: holds the instruction address and its encoded machine word
+ */
+typedef struct {
+    int address;
+    unsigned long value;
+} code_word;
+
+/*
+ * structure: data_byte
+ * operation: holds the data address and its encoded byte
+ */
+typedef struct {
+    int address;
+    unsigned char value;
+} data_byte;
+
+/*
  * Type: memory_state
  * Purpose:
  * Stores the code image, data image, counters and the lists
  * required during the assembler passes.
  */
 typedef struct {
-    unsigned long *code_image;
-    unsigned char *data_image;
+    code_word *code_image;
+    data_byte *data_image;
     int code_capacity;
     int data_capacity;
     reference_node *refs_head;
     entry_node *entries_head;
     int ic; /* Instruction counter. */
     int dc; /* Data counter. */
+    boolean has_extern_directive;
+    boolean has_entry_directive;
 } memory_state;
 
 #endif

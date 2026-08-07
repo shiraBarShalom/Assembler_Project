@@ -1,10 +1,65 @@
 #include "first_pass.h"
 
-/* static helper functions */
+/* numeric bounds */
+#define MAX_16_BIT 32767
+#define MIN_16_BIT -32768
+#define MAX_32_BIT 2147483647L
+#define MIN_32_BIT (-2147483647L - 1L)
+#define MAX_8_BIT 127
+#define MIN_8_BIT -128
+
+/* encoding shifts and masks */
+#define OPCODE_SHIFT 26
+#define RS_SHIFT 21
+#define RT_SHIFT 16
+#define RD_SHIFT 11
+#define FUNCT_SHIFT 6
+#define JMP_REG_FLAG (1UL << 25)
+#define IMMED_MASK 0xFFFFUL
+#define REG_J_MASK 0x1FFFFFFUL
+#define BYTE_MASK 0xFFUL
+#define BYTE_SHIFT_8 8
+#define BYTE_SHIFT_16 16
+#define BYTE_SHIFT_24 24
+
+/*
+ * function: update_data_symbols
+ * input: symbol table head and final ic
+ * output: none
+ * operation: adds final ic to data symbols
+ */
 static void update_data_symbols(symbol_node *head, int final_ic);
+
+/*
+ * function: handle_directive
+ * input: line index state error line num
+ * output: none
+ * operation: parses data directives and dynamically stores bytes with dc addresses
+ */
 static void handle_directive(char line[], int *index, memory_state *state, boolean *line_err, int line_num);
+
+/*
+ * function: handle_instruction
+ * input: line index opcode state error line num
+ * output: none
+ * operation: parses instructions validates operands and dynamically encodes word and address
+ */
 static void handle_instruction(char line[], int *index, char opcode[], memory_state *state, boolean *line_err, int line_num);
+
+/*
+ * function: ensure_code_capacity
+ * input: state struct pointer
+ * output: true if successful false if malloc failed
+ * operation: doubles code array capacity safely
+ */
 static boolean ensure_code_capacity(memory_state *state);
+
+/*
+ * function: ensure_data_capacity
+ * input: state struct pointer and extra bytes needed
+ * output: true if successful false if malloc failed
+ * operation: doubles data array capacity safely
+ */
 static boolean ensure_data_capacity(memory_state *state, int extra);
 
 /*
@@ -14,12 +69,12 @@ static boolean ensure_data_capacity(memory_state *state, int extra);
  * operation: runs first pass logic dynamically and tracks references safely
  */
 boolean run_first_pass(char file_name[], memory_state *state, symbol_node **sym_table) {
-    FILE *am_file;
-    char line[LINE_BUFFER_SIZE];
+    FILE *am_file; /* source am file */
+    char line[LINE_BUFFER_SIZE]; /* line buffer */
     char label_name[MAX_LINE_LEN]; /* buffer for raw label */
-    char first_word[MAX_LINE_LEN];
-    char operands[MAX_DATA_OPERANDS][MAX_LINE_LEN]; /* extracted parameters */
-    symbol_node *existing_sym;
+    char first_word[MAX_LINE_LEN]; /* first word in line */
+    char operands[MAX_OPERANDS_PER_LINE][MAX_LINE_LEN]; /* extracted parameters */
+    symbol_node *existing_sym; /* pointer for duplicate checks */
     reference_node *old_refs; /* state marker for rollback */
     entry_node *curr_entry; /* iterator for entry validation */
     boolean has_error = false; /* total error flag */
@@ -29,7 +84,8 @@ boolean run_first_pass(char file_name[], memory_state *state, symbol_node **sym_
     int line_length; /* measured length without newline */
     int current_ic; /* saved ic before instruction */
     int current_dc; /* saved dc before directive */
-    int i;
+    int i; /* string index */
+    int j; /* loop counter for data address update */
 
     state->ic = INITIAL_IC;
     state->dc = 0;
@@ -37,9 +93,11 @@ boolean run_first_pass(char file_name[], memory_state *state, symbol_node **sym_
     state->data_capacity = INITIAL_CAPACITY;
     state->refs_head = NULL;
     state->entries_head = NULL;
+    state->has_extern_directive = false;
+    state->has_entry_directive = false;
 
-    state->code_image = (unsigned long *)malloc(state->code_capacity * sizeof(unsigned long));
-    state->data_image = (unsigned char *)malloc(state->data_capacity * sizeof(unsigned char));
+    state->code_image = (code_word *)malloc(state->code_capacity * sizeof(code_word));
+    state->data_image = (data_byte *)malloc(state->data_capacity * sizeof(data_byte));
 
     if (state->code_image == NULL || state->data_image == NULL) {
         printf("error memory allocation failed for system images\n");
@@ -114,7 +172,7 @@ boolean run_first_pass(char file_name[], memory_state *state, symbol_node **sym_
                 i++;
             }
 
-            if (!extract_operands(line + i, operands, &op_count, MAX_DATA_OPERANDS)) {
+            if (!extract_operands(line + i, operands, &op_count, MAX_OPERANDS_PER_LINE)) {
                 printf("error in line %d invalid operand structure\n", line_num);
                 line_err = true;
             } else if (op_count != 1) {
@@ -125,6 +183,7 @@ boolean run_first_pass(char file_name[], memory_state *state, symbol_node **sym_
                 line_err = true;
             } else {
                 if (strcmp(first_word, ".extern") == 0) {
+                    state->has_extern_directive = true;
                     existing_sym = find_symbol(*sym_table, operands[0]);
                     if (existing_sym != NULL && existing_sym->type != SYMBOL_EXTERN) {
                         printf("error in line %d symbol %s is already defined locally\n", line_num, operands[0]);
@@ -136,6 +195,7 @@ boolean run_first_pass(char file_name[], memory_state *state, symbol_node **sym_
                         }
                     }
                 } else if (strcmp(first_word, ".entry") == 0) {
+                    state->has_entry_directive = true;
                     if (!entry_exists(state->entries_head, operands[0])) {
                         if (!add_entry_request(&(state->entries_head), operands[0], line_num)) {
                             printf("error in line %d memory allocation failed for entry request\n", line_num);
@@ -214,20 +274,17 @@ boolean run_first_pass(char file_name[], memory_state *state, symbol_node **sym_
 
     if (!has_error) {
         update_data_symbols(*sym_table, state->ic);
+        for (j = 0; j < state->dc; j++) {
+            state->data_image[j].address += state->ic;
+        }
     }
 
     fclose(am_file);
     return !has_error;
 }
 
-/*
- * function: ensure_code_capacity
- * input: state struct pointer
- * output: true if successful false if malloc failed
- * operation: doubles code array capacity safely
- */
 static boolean ensure_code_capacity(memory_state *state) {
-    unsigned long *new_ptr;
+    code_word *new_ptr;
     int code_idx = (state->ic - INITIAL_IC) / 4;
     int new_cap = state->code_capacity;
 
@@ -236,7 +293,7 @@ static boolean ensure_code_capacity(memory_state *state) {
     }
 
     if (new_cap > state->code_capacity) {
-        new_ptr = (unsigned long *)realloc(state->code_image, new_cap * sizeof(unsigned long));
+        new_ptr = (code_word *)realloc(state->code_image, new_cap * sizeof(code_word));
         if (new_ptr == NULL) return false;
         state->code_image = new_ptr;
         state->code_capacity = new_cap;
@@ -244,14 +301,8 @@ static boolean ensure_code_capacity(memory_state *state) {
     return true;
 }
 
-/*
- * function: ensure_data_capacity
- * input: state struct pointer and extra bytes needed
- * output: true if successful false if malloc failed
- * operation: doubles data array capacity safely
- */
 static boolean ensure_data_capacity(memory_state *state, int extra) {
-    unsigned char *new_ptr;
+    data_byte *new_ptr;
     int new_cap = state->data_capacity;
 
     while (state->dc + extra > new_cap) {
@@ -259,7 +310,7 @@ static boolean ensure_data_capacity(memory_state *state, int extra) {
     }
 
     if (new_cap > state->data_capacity) {
-        new_ptr = (unsigned char *)realloc(state->data_image, new_cap * sizeof(unsigned char));
+        new_ptr = (data_byte *)realloc(state->data_image, new_cap * sizeof(data_byte));
         if (new_ptr == NULL) return false;
         state->data_image = new_ptr;
         state->data_capacity = new_cap;
@@ -267,14 +318,8 @@ static boolean ensure_data_capacity(memory_state *state, int extra) {
     return true;
 }
 
-/*
- * function: update_data_symbols
- * input: symbol table head and final ic
- * output: none
- * operation: adds final ic to data symbols
- */
 static void update_data_symbols(symbol_node *head, int final_ic) {
-    symbol_node *curr = head;
+    symbol_node *curr = head; /* iterator */
     while (curr != NULL) {
         if (curr->type == SYMBOL_DATA) {
             curr->address += final_ic;
@@ -283,19 +328,16 @@ static void update_data_symbols(symbol_node *head, int final_ic) {
     }
 }
 
-/*
- * function: handle_directive
- * input: line index state error line num
- * output: none
- * operation: parses data directives and dynamically stores bytes
- */
 static void handle_directive(char line[], int *index, memory_state *state, boolean *line_err, int line_num) {
-    char dir_type[MAX_LINE_LEN];
-    char operands[MAX_DATA_OPERANDS][MAX_LINE_LEN]; /* extracted parameters */
+    char dir_type[MAX_LINE_LEN]; /* directive name */
+    char operands[MAX_OPERANDS_PER_LINE][MAX_LINE_LEN]; /* extracted parameters */
     int op_count = 0; /* amount of parameters */
-    int k, j, temp_j, end_idx; /* loop and length counters */
+    int k; /* loop counter for parsing */
+    int j; /* loop counter for strings */
+    int temp_j; /* loop counter for validation */
+    int end_idx; /* end index for strings */
     long num_val; /* parsed numeric value */
-    unsigned long encoded_val; /* safe unsigned cast for shifting */
+    unsigned long encoded_val; /* safe unsigned cast for masking */
 
     get_first_word(line + *index, dir_type);
 
@@ -350,17 +392,19 @@ static void handle_directive(char line[], int *index, memory_state *state, boole
         }
 
         while (j < end_idx) {
-            state->data_image[state->dc] = (unsigned char)line[j];
+            state->data_image[state->dc].value = (unsigned char)line[j];
+            state->data_image[state->dc].address = state->dc;
             state->dc++;
             j++;
         }
-        state->data_image[state->dc] = 0;
+        state->data_image[state->dc].value = 0;
+        state->data_image[state->dc].address = state->dc;
         state->dc++;
 
         return;
     }
 
-    if (!extract_operands(line + *index, operands, &op_count, MAX_DATA_OPERANDS)) {
+    if (!extract_operands(line + *index, operands, &op_count, MAX_OPERANDS_PER_LINE)) {
         printf("error in line %d invalid operand structure\n", line_num);
         *line_err = true;
         return;
@@ -382,12 +426,13 @@ static void handle_directive(char line[], int *index, memory_state *state, boole
         encoded_val = (unsigned long)num_val;
 
         if (strcmp(dir_type, ".db") == 0) {
-            if (num_val < -128 || num_val > 127) {
+            if (num_val < MIN_8_BIT || num_val > MAX_8_BIT) {
                 printf("error in line %d value out of bounds for 8 bit\n", line_num);
                 *line_err = true;
                 break;
             } else if (ensure_data_capacity(state, 1)) {
-                state->data_image[state->dc] = (unsigned char)(encoded_val & 0xFFUL);
+                state->data_image[state->dc].value = (unsigned char)(encoded_val & BYTE_MASK);
+                state->data_image[state->dc].address = state->dc;
                 state->dc += 1;
             } else {
                 printf("error in line %d data memory allocation failed\n", line_num);
@@ -395,13 +440,15 @@ static void handle_directive(char line[], int *index, memory_state *state, boole
                 break;
             }
         } else if (strcmp(dir_type, ".dh") == 0) {
-            if (num_val < -32768 || num_val > 32767) {
+            if (num_val < MIN_16_BIT || num_val > MAX_16_BIT) {
                 printf("error in line %d value out of bounds for 16 bit\n", line_num);
                 *line_err = true;
                 break;
             } else if (ensure_data_capacity(state, 2)) {
-                state->data_image[state->dc] = (unsigned char)(encoded_val & 0xFFUL);
-                state->data_image[state->dc + 1] = (unsigned char)((encoded_val >> 8) & 0xFFUL);
+                state->data_image[state->dc].value = (unsigned char)(encoded_val & BYTE_MASK);
+                state->data_image[state->dc].address = state->dc;
+                state->data_image[state->dc + 1].value = (unsigned char)((encoded_val >> BYTE_SHIFT_8) & BYTE_MASK);
+                state->data_image[state->dc + 1].address = state->dc + 1;
                 state->dc += 2;
             } else {
                 printf("error in line %d data memory allocation failed\n", line_num);
@@ -409,15 +456,19 @@ static void handle_directive(char line[], int *index, memory_state *state, boole
                 break;
             }
         } else if (strcmp(dir_type, ".dw") == 0) {
-            if (num_val < -2147483647L - 1L || num_val > 2147483647L) {
+            if (num_val < MIN_32_BIT || num_val > MAX_32_BIT) {
                 printf("error in line %d value out of bounds for 32 bit\n", line_num);
                 *line_err = true;
                 break;
             } else if (ensure_data_capacity(state, 4)) {
-                state->data_image[state->dc] = (unsigned char)(encoded_val & 0xFFUL);
-                state->data_image[state->dc + 1] = (unsigned char)((encoded_val >> 8) & 0xFFUL);
-                state->data_image[state->dc + 2] = (unsigned char)((encoded_val >> 16) & 0xFFUL);
-                state->data_image[state->dc + 3] = (unsigned char)((encoded_val >> 24) & 0xFFUL);
+                state->data_image[state->dc].value = (unsigned char)(encoded_val & BYTE_MASK);
+                state->data_image[state->dc].address = state->dc;
+                state->data_image[state->dc + 1].value = (unsigned char)((encoded_val >> BYTE_SHIFT_8) & BYTE_MASK);
+                state->data_image[state->dc + 1].address = state->dc + 1;
+                state->data_image[state->dc + 2].value = (unsigned char)((encoded_val >> BYTE_SHIFT_16) & BYTE_MASK);
+                state->data_image[state->dc + 2].address = state->dc + 2;
+                state->data_image[state->dc + 3].value = (unsigned char)((encoded_val >> BYTE_SHIFT_24) & BYTE_MASK);
+                state->data_image[state->dc + 3].address = state->dc + 3;
                 state->dc += 4;
             } else {
                 printf("error in line %d data memory allocation failed\n", line_num);
@@ -428,19 +479,15 @@ static void handle_directive(char line[], int *index, memory_state *state, boole
     }
 }
 
-/*
- * function: handle_instruction
- * input: line index opcode state error line num
- * output: none
- * operation: parses instructions validates operands and dynamically encodes word
- */
 static void handle_instruction(char line[], int *index, char opcode_name[], memory_state *state, boolean *line_err, int line_num) {
     char operands[MAX_INSTRUCTION_OPERANDS][MAX_LINE_LEN]; /* parsed operands */
     int op_count = 0; /* amount of parsed operands */
     int type; /* instruction format r i j */
     int opcode; /* machine opcode */
     int funct; /* machine funct */
-    int rs = 0, rt = 0, rd = 0; /* registers */
+    int rs = 0; /* source register */
+    int rt = 0; /* target register */
+    int rd = 0; /* destination register */
     long immed_val = 0; /* numeric immediate */
     unsigned long word = 0; /* final packed word */
     int code_idx; /* insertion index */
@@ -488,7 +535,7 @@ static void handle_instruction(char line[], int *index, char opcode_name[], memo
                 *line_err = true; return;
             }
         }
-        word = ((unsigned long)opcode << 26) | ((unsigned long)rs << 21) | ((unsigned long)rt << 16) | ((unsigned long)rd << 11) | ((unsigned long)funct << 6);
+        word = ((unsigned long)opcode << OPCODE_SHIFT) | ((unsigned long)rs << RS_SHIFT) | ((unsigned long)rt << RT_SHIFT) | ((unsigned long)rd << RD_SHIFT) | ((unsigned long)funct << FUNCT_SHIFT);
     }
     else if (type == 2) {
         if (strcmp(opcode_name, "bne") == 0 || strcmp(opcode_name, "beq") == 0 || strcmp(opcode_name, "blt") == 0 || strcmp(opcode_name, "bgt") == 0) {
@@ -506,7 +553,7 @@ static void handle_instruction(char line[], int *index, char opcode_name[], memo
             }
             immed_val = 0;
 
-            if (!add_reference(&(state->refs_head), operands[2], state->ic, REF_I_TYPE)) {
+            if (!add_reference(&(state->refs_head), operands[2], state->ic, line_num, REF_I_TYPE)) {
                 printf("error in line %d memory allocation failed for reference\n", line_num);
                 *line_err = true; return;
             }
@@ -520,12 +567,12 @@ static void handle_instruction(char line[], int *index, char opcode_name[], memo
                 printf("error in line %d invalid operand types\n", line_num);
                 *line_err = true; return;
             }
-            if (immed_val < -32768 || immed_val > 32767) {
+            if (immed_val < MIN_16_BIT || immed_val > MAX_16_BIT) {
                 printf("error in line %d immediate value out of 16 bit range\n", line_num);
                 *line_err = true; return;
             }
         }
-        word = ((unsigned long)opcode << 26) | ((unsigned long)rs << 21) | ((unsigned long)rt << 16) | ((unsigned long)immed_val & 0xFFFFUL);
+        word = ((unsigned long)opcode << OPCODE_SHIFT) | ((unsigned long)rs << RS_SHIFT) | ((unsigned long)rt << RT_SHIFT) | ((unsigned long)immed_val & IMMED_MASK);
     }
     else if (type == 3) {
         if (strcmp(opcode_name, "hlt") == 0) {
@@ -533,17 +580,17 @@ static void handle_instruction(char line[], int *index, char opcode_name[], memo
                 printf("error in line %d expected 0 operands\n", line_num);
                 *line_err = true; return;
             }
-            word = ((unsigned long)opcode << 26);
+            word = ((unsigned long)opcode << OPCODE_SHIFT);
         } else if (strcmp(opcode_name, "jmp") == 0) {
             if (op_count != 1) {
                 printf("error in line %d expected 1 operand\n", line_num);
                 *line_err = true; return;
             }
             if (parse_register(operands[0], &rs)) {
-                word = ((unsigned long)opcode << 26) | (1UL << 25) | ((unsigned long)rs & 0x1FFFFFFUL);
+                word = ((unsigned long)opcode << OPCODE_SHIFT) | JMP_REG_FLAG | ((unsigned long)rs & REG_J_MASK);
             } else if (is_valid_label_name(operands[0]) && !is_reserved_word(operands[0])) {
-                word = ((unsigned long)opcode << 26);
-                if (!add_reference(&(state->refs_head), operands[0], state->ic, REF_J_TYPE)) {
+                word = ((unsigned long)opcode << OPCODE_SHIFT);
+                if (!add_reference(&(state->refs_head), operands[0], state->ic, line_num, REF_J_TYPE)) {
                     printf("error in line %d memory allocation failed for reference\n", line_num);
                     *line_err = true; return;
                 }
@@ -560,8 +607,8 @@ static void handle_instruction(char line[], int *index, char opcode_name[], memo
                 printf("error in line %d invalid target label\n", line_num);
                 *line_err = true; return;
             }
-            word = ((unsigned long)opcode << 26);
-            if (!add_reference(&(state->refs_head), operands[0], state->ic, REF_J_TYPE)) {
+            word = ((unsigned long)opcode << OPCODE_SHIFT);
+            if (!add_reference(&(state->refs_head), operands[0], state->ic, line_num, REF_J_TYPE)) {
                 printf("error in line %d memory allocation failed for reference\n", line_num);
                 *line_err = true; return;
             }
@@ -570,7 +617,8 @@ static void handle_instruction(char line[], int *index, char opcode_name[], memo
 
     code_idx = (state->ic - INITIAL_IC) / 4;
     if (ensure_code_capacity(state)) {
-        state->code_image[code_idx] = word & 0xFFFFFFFFUL;
+        state->code_image[code_idx].value = word & 0xFFFFFFFFUL;
+        state->code_image[code_idx].address = state->ic;
         state->ic += 4;
     } else {
         printf("error in line %d code memory allocation failed\n", line_num);

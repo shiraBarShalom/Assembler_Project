@@ -20,12 +20,13 @@ typedef enum {
  * structure: symbol_node
  * input: none
  * output: none
- * operation: symbol node struct
+ * operation: symbol node struct holding name address type and entry flag
  */
 typedef struct symbol_node {
     char name[MAX_LABEL_LEN];
     int address;
     symbol_type type;
+    boolean is_entry;
     struct symbol_node *next;
 } symbol_node;
 
@@ -33,11 +34,12 @@ typedef struct symbol_node {
  * structure: reference_node
  * input: none
  * output: none
- * operation: tracks unresolved labels and their memory addresses
+ * operation: tracks unresolved labels instruction addresses and line number for errors
  */
 typedef struct reference_node {
     char name[MAX_LABEL_LEN];
-    int address;
+    int instruction_address;
+    int line_num;
     ref_type type;
     struct reference_node *next;
 } reference_node;
@@ -64,11 +66,11 @@ symbol_node* add_symbol(symbol_node **head, char name[], int address, symbol_typ
 
 /*
  * function: add_reference
- * input: pointer to head name address and type
+ * input: pointer to head name instruction address line number and type
  * output: true if successful false if allocation fails
  * operation: adds new unresolved reference to list
  */
-boolean add_reference(reference_node **head, char name[], int address, ref_type type);
+boolean add_reference(reference_node **head, char name[], int instruction_address, int line_num, ref_type type);
 
 /*
  * function: add_entry_request

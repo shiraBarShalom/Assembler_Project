@@ -18,7 +18,7 @@
 /* maximum operands an instruction can have */
 #define MAX_INSTRUCTION_OPERANDS 3
 /* maximum operands a data directive can have */
-#define MAX_DATA_OPERANDS 40
+#define MAX_OPERANDS_PER_LINE 40
 
 /* true false enum */
 typedef enum {

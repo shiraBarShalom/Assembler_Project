@@ -27,7 +27,7 @@ void get_first_word(char line[], char word[]) {
 
     skip_spaces(line, &i);
 
-    while (line[i] != ' ' && line[i] != '\t' && line[i] != '\n' && line[i] != '\0' && line[i] != EOF) {
+    while (line[i] != ' ' && line[i] != '\t' && line[i] != '\n' && line[i] != '\0') {
         word[j] = line[i];
         i++;
         j++;
@@ -86,7 +86,10 @@ boolean is_reserved_word(char word[]) {
     if (strcmp(word, ".db") == 0 || strcmp(word, ".dh") == 0 ||
         strcmp(word, ".dw") == 0 || strcmp(word, ".asciz") == 0 ||
         strcmp(word, "asciz") == 0 ||
-        strcmp(word, ".entry") == 0 || strcmp(word, ".extern") == 0) {
+        strcmp(word, ".entry") == 0 || strcmp(word, ".extern") == 0 ||
+        strcmp(word, "db") == 0 || strcmp(word, "dh") == 0 ||
+        strcmp(word, "dw") == 0 || strcmp(word, "entry") == 0 ||
+        strcmp(word, "extern") == 0) {
         return true;
     }
     
