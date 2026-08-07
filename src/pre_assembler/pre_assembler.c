@@ -1,37 +1,5 @@
+/* pre_assembler.c */
 #include "pre_assembler.h"
-
-/*
- * function: create_am_name
- * input: original file name and double pointer for target buffer
- * output: true if extension replaced and allocated false otherwise
- * operation: allocates memory and replaces as extension with am dynamically
- */
-static boolean create_am_name(char file_name[], char **am_name) {
-    char *dot_ptr; /* pointer to extension */
-    size_t length; /* total filename size */
-
-    if (file_name == NULL || am_name == NULL) {
-        return false;
-    }
-
-    length = strlen(file_name);
-    *am_name = (char *)malloc(length + 1);
-    if (*am_name == NULL) {
-        return false;
-    }
-
-    strcpy(*am_name, file_name);
-    dot_ptr = strrchr(*am_name, '.');
-
-    if (dot_ptr != NULL && strcmp(dot_ptr, ".as") == 0) {
-        strcpy(dot_ptr, ".am");
-        return true;
-    }
-
-    free(*am_name);
-    *am_name = NULL;
-    return false;
-}
 
 /*
  * function: check_line_length
@@ -86,6 +54,95 @@ static void handle_mcroend(char line[], int line_num, boolean *is_def, boolean *
 }
 
 /*
+ * function: check_missing_macro_name
+ * input: line character index and line number
+ * output: true if missing false otherwise
+ * operation: checks if line ends before macro name
+ */
+static boolean check_missing_macro_name(char line[], int i, int line_num) {
+    if (line[i] == '\n' || line[i] == '\0') {
+        printf("error in line %d missing macro name\n", line_num);
+        return true;
+    }
+    return false;
+}
+
+/*
+ * function: extract_macro_name
+ * input: line index pointer macro name buffer and local error flag
+ * output: none
+ * operation: reads characters into macro name buffer
+ */
+static void extract_macro_name(char line[], int *i, char macro_name[], boolean *local_err, int line_num) {
+    int j = 0; /* copy index */
+
+    if (!isalpha((unsigned char)line[*i])) {
+        printf("error in line %d macro name must start with a letter\n", line_num);
+        *local_err = true;
+    }
+
+    while (line[*i] != ' ' && line[*i] != '\t' && line[*i] != '\n' && line[*i] != '\0') {
+        if (j < MAX_LABEL_LEN - 1) {
+            macro_name[j] = line[*i];
+            j++;
+        } else if (j == MAX_LABEL_LEN - 1) {
+            printf("error in line %d macro name exceeds maximum length\n", line_num);
+            *local_err = true;
+            j++;
+        }
+        (*i)++;
+    }
+
+    macro_name[j < MAX_LABEL_LEN ? j : MAX_LABEL_LEN - 1] = '\0';
+}
+
+/*
+ * function: check_macro_extra_text
+ * input: line index and line number
+ * output: true if extra text exists false otherwise
+ * operation: verifies no text follows macro name
+ */
+static boolean check_macro_extra_text(char line[], int i, int line_num) {
+    skip_spaces(line, &i);
+    if (line[i] != '\n' && line[i] != '\0') {
+        printf("error in line %d extraneous text after macro name\n", line_num);
+        return true;
+    }
+    return false;
+}
+
+/*
+ * function: validate_macro_characters
+ * input: macro name and line number
+ * output: true if invalid characters found false otherwise
+ * operation: ensures macro name contains only alphanumeric characters or underscores
+ */
+static boolean validate_macro_characters(char macro_name[], int line_num) {
+    int k; /* validation index */
+    for (k = 0; macro_name[k] != '\0'; k++) {
+        if (!isalnum((unsigned char)macro_name[k]) && macro_name[k] != '_') {
+            printf("error in line %d invalid character in macro name\n", line_num);
+            return true;
+        }
+    }
+    return false;
+}
+
+/*
+ * function: check_reserved_macro_name
+ * input: macro name and line number
+ * output: true if reserved false otherwise
+ * operation: prevents using reserved words as macro names
+ */
+static boolean check_reserved_macro_name(char macro_name[], int line_num) {
+    if (is_reserved_word(macro_name)) {
+        printf("error in line %d illegal macro name %s\n", line_num, macro_name);
+        return true;
+    }
+    return false;
+}
+
+/*
  * function: handle_mcro_start
  * input: line buffer line number macro lists and state flags
  * output: none
@@ -94,69 +151,34 @@ static void handle_mcroend(char line[], int line_num, boolean *is_def, boolean *
 static void handle_mcro_start(char line[], int line_num, macro_node **head, macro_node **curr, boolean *is_def, boolean *has_err) {
     char macro_name[MAX_LABEL_LEN]; /* parsed name */
     int i = 0; /* reading index */
-    int j = 0; /* copy index */
-    int k; /* validation index */
     boolean local_err = false; /* local string errors */
 
     *is_def = true;
 
     skip_spaces(line, &i);
-
     while (line[i] != ' ' && line[i] != '\t' && line[i] != '\0') {
         i++;
     }
-
     skip_spaces(line, &i);
 
-    if (line[i] == '\n' || line[i] == '\0') {
-        printf("error in line %d missing macro name\n", line_num);
+    if (check_missing_macro_name(line, i, line_num)) {
         *has_err = true;
         *curr = NULL;
         return;
     }
 
-    if (!isalpha((unsigned char)line[i])) {
-        printf("error in line %d macro name must start with a letter\n", line_num);
+    extract_macro_name(line, &i, macro_name, &local_err, line_num);
+
+    if (check_macro_extra_text(line, i, line_num)) {
         local_err = true;
     }
 
-    while (line[i] != ' ' && line[i] != '\t' && line[i] != '\n' && line[i] != '\0') {
-        if (j < MAX_LABEL_LEN - 1) {
-            macro_name[j] = line[i];
-            j++;
-        } else if (j == MAX_LABEL_LEN - 1) {
-            printf("error in line %d macro name exceeds maximum length\n", line_num);
-            local_err = true;
-            j++;
-        }
-
-        i++;
-    }
-
-    macro_name[j < MAX_LABEL_LEN ? j : MAX_LABEL_LEN - 1] = '\0';
-
-    skip_spaces(line, &i);
-
-    if (line[i] != '\n' && line[i] != '\0') {
-        printf("error in line %d extraneous text after macro name\n", line_num);
+    if (!local_err && validate_macro_characters(macro_name, line_num)) {
         local_err = true;
     }
 
-    if (!local_err) {
-        for (k = 0; macro_name[k] != '\0'; k++) {
-            if (!isalnum((unsigned char)macro_name[k]) && macro_name[k] != '_') {
-                printf("error in line %d invalid character in macro name\n", line_num);
-                local_err = true;
-                break;
-            }
-        }
-    }
-
-    if (is_reserved_word(macro_name)) {
-        if (!local_err) {
-            printf("error in line %d illegal macro name %s\n", line_num, macro_name);
-            local_err = true;
-        }
+    if (!local_err && check_reserved_macro_name(macro_name, line_num)) {
+        local_err = true;
     }
 
     if (local_err) {
@@ -235,7 +257,8 @@ boolean run_pre_assembler(char file_name[]) {
         return false;
     }
 
-    if (!create_am_name(file_name, &am_file_name)) {
+    am_file_name = replace_extension(file_name, ".am");
+    if (am_file_name == NULL) {
         printf("error file name does not have as extension or memory failed\n");
         fclose(as_file);
         return false;

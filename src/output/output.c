@@ -1,3 +1,4 @@
+/* output.c */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -8,44 +9,6 @@
 #define BYTE_SHIFT_8 8
 #define BYTE_SHIFT_16 16
 #define BYTE_SHIFT_24 24
-
-/*
- * function: replace_extension
- * input: original file name and new extension string
- * output: dynamically allocated string with new extension or null
- * operation: replaces or appends file extension dynamically
- */
-static char *replace_extension(const char file_name[], const char new_extension[]) {
-    const char *last_dot; /* pointer to last dot in string */
-    char *new_name; /* allocated new name */
-    size_t base_length; /* length before extension */
-    size_t total_length; /* total allocated size */
-
-    if (file_name == NULL || new_extension == NULL) {
-        return NULL;
-    }
-
-    last_dot = strrchr(file_name, '.');
-
-    if (last_dot == NULL) {
-        base_length = strlen(file_name);
-    } else {
-        base_length = (size_t)(last_dot - file_name);
-    }
-
-    total_length = base_length + strlen(new_extension) + 1;
-
-    new_name = (char *)malloc(total_length);
-    if (new_name == NULL) {
-        return NULL;
-    }
-
-    memcpy(new_name, file_name, base_length);
-    new_name[base_length] = '\0';
-    strcat(new_name, new_extension);
-
-    return new_name;
-}
 
 /*
  * function: create_object_file

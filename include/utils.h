@@ -1,3 +1,4 @@
+/* utils.h */
 #ifndef UTILS_H
 #define UTILS_H
 
@@ -34,5 +35,13 @@ boolean is_empty_or_comment(char line[]);
  * operation: checks if word is a reserved name
  */
 boolean is_reserved_word(char word[]);
+
+/*
+ * function: replace_extension
+ * input: original file name and new extension string
+ * output: dynamically allocated string with new extension or null
+ * operation: replaces or appends file extension dynamically
+ */
+char *replace_extension(const char file_name[], const char new_extension[]);
 
 #endif
