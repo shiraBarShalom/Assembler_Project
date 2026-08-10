@@ -1,4 +1,3 @@
-/* first_pass.c */
 #include "first_pass.h"
 
 /* numeric bounds */
@@ -528,8 +527,8 @@ static boolean extract_label(char line[], int *i, char label_name[], boolean *li
             *line_err = true;
             return false;
         }
-        skip_spaces(line, i);
     }
+    skip_spaces(line, i);
     return line_has_label;
 }
 
@@ -809,4 +808,67 @@ boolean run_first_pass(char file_name[], memory_state *state, symbol_node **sym_
 
     fclose(am_file);
     return !has_error;
+}
+
+/*
+ * function: ensure_code_capacity
+ * input: state struct pointer
+ * output: true if successful false if malloc failed
+ * operation: doubles code array capacity safely
+ */
+static boolean ensure_code_capacity(memory_state *state) {
+    code_word *new_ptr;
+    int code_idx = (state->ic - INITIAL_IC) / 4;
+    int new_cap = state->code_capacity;
+
+    while (code_idx >= new_cap) {
+        new_cap *= 2;
+    }
+
+    if (new_cap > state->code_capacity) {
+        new_ptr = (code_word *)realloc(state->code_image, new_cap * sizeof(code_word));
+        if (new_ptr == NULL) return false;
+        state->code_image = new_ptr;
+        state->code_capacity = new_cap;
+    }
+    return true;
+}
+
+/*
+ * function: ensure_data_capacity
+ * input: state struct pointer and extra bytes needed
+ * output: true if successful false if malloc failed
+ * operation: doubles data array capacity safely
+ */
+static boolean ensure_data_capacity(memory_state *state, int extra) {
+    data_byte *new_ptr;
+    int new_cap = state->data_capacity;
+
+    while (state->dc + extra > new_cap) {
+        new_cap *= 2;
+    }
+
+    if (new_cap > state->data_capacity) {
+        new_ptr = (data_byte *)realloc(state->data_image, new_cap * sizeof(data_byte));
+        if (new_ptr == NULL) return false;
+        state->data_image = new_ptr;
+        state->data_capacity = new_cap;
+    }
+    return true;
+}
+
+/*
+ * function: update_data_symbols
+ * input: symbol table head and final ic
+ * output: none
+ * operation: adds final ic to data symbols
+ */
+static void update_data_symbols(symbol_node *head, int final_ic) {
+    symbol_node *curr = head; /* iterator */
+    while (curr != NULL) {
+        if (curr->type == SYMBOL_DATA) {
+            curr->address += final_ic;
+        }
+        curr = curr->next;
+    }
 }

@@ -1,4 +1,3 @@
-/* utils.c */
 #include "utils.h"
 
 #define NUM_RESERVED_WORDS 29
@@ -114,7 +113,7 @@ boolean is_reserved_word(char word[]) {
             }
         }
     }
-    
+
     return false;
 }
 

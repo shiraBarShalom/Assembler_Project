@@ -1,8 +1,8 @@
-/* output.c */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "output.h"
+#include "utils.h"
 
 /* byte shifting definitions */
 #define BYTE_MASK 0xFFUL

@@ -1,4 +1,3 @@
-/* main.c */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -9,6 +8,7 @@
 #include "first_pass.h"
 #include "second_pass.h"
 #include "output.h"
+#include "utils.h"
 
 /*
  * function: has_as_extension

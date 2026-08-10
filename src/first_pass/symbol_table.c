@@ -77,7 +77,7 @@ boolean add_entry_request(entry_node **head, char name[], int line_num) {
  * operation: finds symbol by name
  */
 symbol_node* find_symbol(symbol_node *head, char name[]) {
-    symbol_node *current = head;
+    symbol_node *current = head; /* iterator */
 
     while (current != NULL) {
         if (strcmp(current->name, name) == 0) {
@@ -96,7 +96,7 @@ symbol_node* find_symbol(symbol_node *head, char name[]) {
  * operation: checks if entry request is already listed
  */
 boolean entry_exists(entry_node *head, char name[]) {
-    entry_node *current = head;
+    entry_node *current = head; /* iterator */
 
     while (current != NULL) {
         if (strcmp(current->name, name) == 0) {
@@ -115,8 +115,8 @@ boolean entry_exists(entry_node *head, char name[]) {
  * operation: frees symbol table memory
  */
 void free_symbol_table(symbol_node *head) {
-    symbol_node *current = head;
-    symbol_node *next_node;
+    symbol_node *current = head; /* iterator */
+    symbol_node *next_node; /* temporary pointer */
 
     while (current != NULL) {
         next_node = current->next;
@@ -132,8 +132,8 @@ void free_symbol_table(symbol_node *head) {
  * operation: frees all memory allocated for references
  */
 void free_references(reference_node *head) {
-    reference_node *current = head;
-    reference_node *next_node;
+    reference_node *current = head; /* iterator */
+    reference_node *next_node; /* temporary pointer */
 
     while (current != NULL) {
         next_node = current->next;
@@ -149,8 +149,8 @@ void free_references(reference_node *head) {
  * operation: frees all memory allocated for entries
  */
 void free_entries(entry_node *head) {
-    entry_node *current = head;
-    entry_node *next_node;
+    entry_node *current = head; /* iterator */
+    entry_node *next_node; /* temporary pointer */
 
     while (current != NULL) {
         next_node = current->next;

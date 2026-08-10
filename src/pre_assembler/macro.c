@@ -8,7 +8,7 @@
  */
 macro_node* add_macro(macro_node **head, char name[]) {
     macro_node *new_macro = (macro_node*)malloc(sizeof(macro_node));
-    macro_node *current = *head;
+    macro_node *current = *head; /* iterator */
     
     if (new_macro == NULL) {
         return NULL;
@@ -38,7 +38,7 @@ macro_node* add_macro(macro_node **head, char name[]) {
  */
 boolean add_line_to_macro(macro_node *macro, char line[]) {
     macro_line *new_line = (macro_line*)malloc(sizeof(macro_line));
-    macro_line *current;
+    macro_line *current; /* iterator */
     
     if (new_line == NULL) {
         return false;
@@ -67,7 +67,7 @@ boolean add_line_to_macro(macro_node *macro, char line[]) {
  * operation: searches the linked list for a macro by its name
  */
 macro_node* find_macro(macro_node *head, char name[]) {
-    macro_node *current = head;
+    macro_node *current = head; /* iterator */
     
     while (current != NULL) {
         if (strcmp(current->name, name) == 0) {
@@ -86,10 +86,10 @@ macro_node* find_macro(macro_node *head, char name[]) {
  * operation: frees all allocated memory for macros and their lines
  */
 void free_macros(macro_node *head) {
-    macro_node *current_macro = head;
-    macro_node *next_macro;
-    macro_line *current_line;
-    macro_line *next_line;
+    macro_node *current_macro = head; /* main list iterator */
+    macro_node *next_macro; /* temporary pointer */
+    macro_line *current_line; /* inner list iterator */
+    macro_line *next_line; /* temporary pointer */
     
     while (current_macro != NULL) {
         current_line = current_macro->lines;

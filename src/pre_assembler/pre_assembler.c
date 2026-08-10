@@ -1,4 +1,3 @@
-/* pre_assembler.c */
 #include "pre_assembler.h"
 
 /*
@@ -259,7 +258,7 @@ boolean run_pre_assembler(char file_name[]) {
 
     am_file_name = replace_extension(file_name, ".am");
     if (am_file_name == NULL) {
-        printf("error file name does not have as extension or memory failed\n");
+        printf("error memory allocation failed for am file name\n");
         fclose(as_file);
         return false;
     }
