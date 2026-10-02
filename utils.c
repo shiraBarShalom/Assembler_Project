@@ -1,3 +1,11 @@
+/*
+ * file: utils.c
+ * description: small helper functions used all over the project
+ * it can skip spaces, get the first word of a line, check if a line is empty
+ * or a comment, check if a word is a reserved word and build a new file name
+ * with a different extension
+ */
+
 #include "utils.h"
 
 #define NUM_RESERVED_WORDS 29
@@ -5,26 +13,25 @@
 
 /*
  * function: skip_spaces
- * input: char array line and pointer to index
+ * input: line and pointer to index
  * output: none
- * operation: skips spaces and tabs
+ * operation: moves the index past spaces and tabs
  */
 void skip_spaces(char line[], int *index) {
-    while (line[*index] == ' ' || line[*index] == '\t') {
+    while (line[*index] == ' ' || line[*index] == '\t'){
         (*index)++;
     }
 }
 
 /*
  * function: get_first_word
- * input: char array line and char array word
+ * input: line and buffer for the first word
  * output: none
- * operation: gets first word until space or newline
+ * operation: copies thefirst word from the line
  */
-void get_first_word(char line[], char word[]) {
+void get_first_word(char line[], char word[]){
     int i = 0;
     int j = 0;
-
     skip_spaces(line, &i);
 
     while (line[i] != ' ' && line[i] != '\t' && line[i] != '\n' && line[i] != '\0') {
@@ -33,14 +40,14 @@ void get_first_word(char line[], char word[]) {
         j++;
     }
     
-    word[j] = '\0';
+    word[j]='\0';
 }
 
 /*
  * function: is_empty_or_comment
- * input: char array line
- * output: true if empty or comment false otherwise
- * operation: checks for comment or empty line
+ * input: source line
+ * output: true if the line is empty or a comment false otherwise
+ * operation: checks if the line should be ignored
  */
 boolean is_empty_or_comment(char line[]) {
     int i = 0; 
@@ -54,21 +61,19 @@ boolean is_empty_or_comment(char line[]) {
     if (line[i] == '\0' || line[i] == '\n') {
         return true;
     }
-    
     return false;
 }
 
 /*
  * function: is_reserved_word
- * input: char array word
- * output: true if reserved false otherwise
- * operation: checks if word is a reserved name
+ * input: word to check
+ * output: true if the word is reserved false otherwise
+ * operation: checks if the word is an instruction directive or register name
  */
 boolean is_reserved_word(char word[]) {
     int i; 
     int j; 
     int reg_num; 
-    boolean is_num; 
     const char *instructions[] = {
         "add", "sub", "and", "or", "nor", "move", "mvhi", "mvlo",
         "addi", "subi", "andi", "ori", "nori", "bne", "beq", "blt", "bgt",
@@ -94,40 +99,47 @@ boolean is_reserved_word(char word[]) {
     }
     
     if (word[0] == '$') {
-        is_num = true;
         j = 1;
+        reg_num = 0;
+        
         if (word[j] == '\0') {
-            is_num = false;
+            return false;
         }
+        
+        if (word[j] == '0' && word[j + 1] != '\0') {
+            return false;
+        }
+        
         while (word[j] != '\0') {
             if (!isdigit((unsigned char)word[j])) {
-                is_num = false;
-                break;
+                return false;
+            }
+            
+            reg_num = reg_num * 10 + (word[j] - '0');
+            
+            if (reg_num > MAX_REGISTER_NUM) {
+                return false;
             }
             j++;
         }
-        if (is_num) {
-            reg_num = atoi(word + 1);
-            if (reg_num >= 0 && reg_num <= MAX_REGISTER_NUM) {
-                return true;
-            }
-        }
+        
+        return true;
     }
-
+    
     return false;
 }
 
 /*
  * function: replace_extension
- * input: original file name and new extension string
- * output: dynamically allocated string with new extension or null
- * operation: replaces or appends file extension dynamically
+ * input: file name and new extension
+ * output: new file name or null if memory allocation fails
+ * operation: creates a new file name with the given extension
  */
 char *replace_extension(const char file_name[], const char new_extension[]) {
-    const char *last_dot; /* pointer to last dot in string */
-    char *new_name; /* allocated new name */
-    size_t base_length; /* length before extension */
-    size_t total_length; /* total allocated size */
+    const char *last_dot;
+    char *new_name;
+    size_t base_length;
+    size_t total_length;
 
     if (file_name == NULL || new_extension == NULL) {
         return NULL;

@@ -1,3 +1,11 @@
+/*
+ * file: parser.c
+ * description: helper functions used to read and check the parts of a line
+ * it can find a label, check if a label name is legal, check the commas between operands
+ * look up an instruction in the table and read registers and numbers from the text
+ * the first pass uses these functions to break a line into its pieces
+ */
+
 #include "parser.h"
 
 #define MAX_OP_NAME 10
@@ -10,7 +18,7 @@
  * structure: op_info_node
  * input: none
  * output: none
- * operation: struct to hold operation dictionary data locally
+ * operation: stores the information needed for one instruction
  */
 typedef struct {
     char name[MAX_OP_NAME];
@@ -21,17 +29,18 @@ typedef struct {
 
 /*
  * function: has_label
- * input: char array line and char array label buffer
- * output: true if label found false otherwise
- * operation: gets label if exists without truncating
+ * input: source line and label buffer
+ * output: true if a label was found false otherwise
+ * operation: gets the label from the beginning of the line
  */
 boolean has_label(char line[], char label[]) {
-    char first_word[MAX_LINE_LEN]; /* extracted token */
-    int len; /* length of extracted word */
+    char first_word[MAX_LINE_LEN];
+    int len;
 
     get_first_word(line, first_word);
     len = strlen(first_word);
 
+    /* a label ends with ':' in the first word of the line */
     if (len > 0 && first_word[len - 1] == ':') {
         strncpy(label, first_word, len - 1);
         label[len - 1] = '\0';
@@ -43,18 +52,19 @@ boolean has_label(char line[], char label[]) {
 
 /*
  * function: is_valid_label_name
- * input: char array label
+ * input: label name
  * output: true if valid false otherwise
- * operation: checks if label is alphanumeric starts with letter and length is ok
+ * operation: checks if the label name follows the label rules
  */
 boolean is_valid_label_name(char label[]) {
-    int i = 1; /* character index */
-    size_t len = strlen(label); /* label string length */
+    int i = 1; /* first character is checked separately */
+    size_t len = strlen(label);
 
     if (len == 0 || len > MAX_LABEL_LEN - 1) {
         return false;
     }
 
+    /* label names must start with a letter */
     if (!isalpha((unsigned char)label[0])) {
         return false;
     }
@@ -71,17 +81,18 @@ boolean is_valid_label_name(char label[]) {
 
 /*
  * function: check_comma_syntax
- * input: char array line starting after command
- * output: true if syntax is valid false otherwise
- * operation: checks comma rules
+ * input: operand part of the line
+ * output: true if comma syntax is valid false otherwise
+ * operation: checks the comma positions between operands
  */
 boolean check_comma_syntax(char line[]) {
-    int i = 0; /* loop index */
-    boolean expecting_comma = false; /* tracks expected character type */
-    boolean empty = true; /* tracks if string has any content */
+    int i = 0;
+    boolean expecting_comma = false; /* true after reading an operand */
+    boolean empty = true;
 
     skip_spaces(line, &i);
 
+    /* a comma cannot appear before the first operand */
     if (line[i] == ',') {
         return false;
     }
@@ -89,17 +100,22 @@ boolean check_comma_syntax(char line[]) {
     while (line[i] != '\0' && line[i] != '\n') {
         empty = false;
         if (line[i] == ',') {
+            /* reject two commas without an operand between them */
             if (!expecting_comma) {
                 return false;
             }
             expecting_comma = false;
             i++;
             skip_spaces(line, &i);
+
+            /* a comma must be followed by another operand */
             if (line[i] == '\0' || line[i] == '\n' || line[i] == ',') {
                 return false;
             }
         } else {
             expecting_comma = true;
+
+            /* move to the end of the current operand */
             while (line[i] != ' ' && line[i] != '\t' && line[i] != ',' && line[i] != '\0' && line[i] != '\n') {
                 i++;
             }
@@ -107,6 +123,7 @@ boolean check_comma_syntax(char line[]) {
         }
     }
 
+    /* the line cannot end immediately after a comma */
     if (!empty && !expecting_comma) {
         return false;
     }
@@ -116,12 +133,12 @@ boolean check_comma_syntax(char line[]) {
 
 /*
  * function: get_op_info
- * input: char array word and pointers for type opcode and funct
- * output: true if valid instruction false otherwise
- * operation: looks up local instruction table for encoding details
+ * input: operation name and pointers for type opcode and funct
+ * output: true if the operation was found false otherwise
+ * operation: gets the instruction type opcode and funct
  */
 boolean get_op_info(char word[], int *type, int *opcode, int *funct) {
-    int i; /* loop index */
+    int i;
     const op_info_node op_table[NUM_INSTRUCTIONS] = {
         {"add",  OP_TYPE_R, 0,  1},
         {"sub",  OP_TYPE_R, 0,  2},
@@ -152,6 +169,7 @@ boolean get_op_info(char word[], int *type, int *opcode, int *funct) {
         {"hlt",  OP_TYPE_J, 63, 0}
     };
 
+    /* search the instruction table for the operation name */
     for (i = 0; i < NUM_INSTRUCTIONS; i++) {
         if (strcmp(word, op_table[i].name) == 0) {
             *type = op_table[i].type;
@@ -166,12 +184,13 @@ boolean get_op_info(char word[], int *type, int *opcode, int *funct) {
 
 /*
  * function: parse_register
- * input: char array operand and pointer to register number
- * output: true if valid register false otherwise
- * operation: validates register format dollar sign and number
+ * input: operand and pointer to register number
+ * output: true if the register is valid false otherwise
+ * operation: checks the register format and gets its number
  */
 boolean parse_register(char operand[], int *reg_num) {
-    int i = 1; /* checking index after dollar sign */
+    int i = 1; /* register number starts after '$' */
+    int value = 0;
 
     if (operand[0] != '$') {
         return false;
@@ -181,36 +200,45 @@ boolean parse_register(char operand[], int *reg_num) {
         return false;
     }
 
+    /* register 0 must be written as $0 without leading zeros */
+    if (operand[1] == '0' && operand[2] != '\0') {
+        return false;
+    }
+
     while (operand[i] != '\0') {
         if (!isdigit((unsigned char)operand[i])) {
             return false;
         }
+
+        value = value * 10 + (operand[i] - '0');
+
+        /* valid register numbers are 0 through 31 */
+        if (value > 31) {
+            return false;
+        }
+
         i++;
     }
 
-    *reg_num = atoi(operand + 1);
-
-    if (*reg_num < 0 || *reg_num > 31) {
-        return false;
-    }
-
+    *reg_num = value;
     return true;
 }
 
 /*
  * function: parse_number
- * input: char array operand and pointer to long value
- * output: true if valid integer false otherwise
- * operation: parses string to long integer safely
+ * input: operand and pointer to numeric value
+ * output: true if the number is valid false otherwise
+ * operation: checks and converts the operand to a decimal number
  */
 boolean parse_number(char operand[], long *value) {
-    char *endptr; /* pointer for error checking */
-    int i = 0; /* loop index */
+    char *endptr;
+    int i = 0;
 
     if (operand[0] == '\0') {
         return false;
     }
 
+    /* a number may start with '+' or '-' */
     if (operand[0] == '-' || operand[0] == '+') {
         i++;
         if (operand[i] == '\0') {
@@ -218,6 +246,7 @@ boolean parse_number(char operand[], long *value) {
         }
     }
 
+    /* after the optional sign only digits are allowed */
     while (operand[i] != '\0') {
         if (!isdigit((unsigned char)operand[i])) {
             return false;
@@ -228,6 +257,7 @@ boolean parse_number(char operand[], long *value) {
     errno = 0;
     *value = strtol(operand, &endptr, 10);
 
+    /* check that the conversion succeeded and used the whole string */
     if (errno != 0 || *endptr != '\0') {
         return false;
     }
@@ -237,20 +267,21 @@ boolean parse_number(char operand[], long *value) {
 
 /*
  * function: extract_operands
- * input: char array line operands array count pointer and max ops
- * output: true if split succeeds false on error
- * operation: splits operand string by commas safely up to limit
+ * input: operand line array for operands count pointer and maximum operands
+ * output: true if operands were read successfully false otherwise
+ * operation: separates the operands by commas and stores them in the array
  */
 boolean extract_operands(char line[], char operands[][MAX_LINE_LEN], int *count, int max_ops) {
-    int i = 0; /* main string index */
-    int op_idx = 0; /* current operand index */
-    int char_idx = 0; /* current character index */
-    int start; /* trim start index */
-    int end; /* trim end index */
+    int i = 0;
+    int op_idx = 0; /* current operand in the array */
+    int char_idx = 0; /* current position inside the operand */
+    int start;
+    int end;
 
     *count = 0;
     skip_spaces(line, &i);
 
+    /* no text means there are no operands */
     if (line[i] == '\0' || line[i] == '\n') {
         return true;
     }
@@ -260,6 +291,8 @@ boolean extract_operands(char line[], char operands[][MAX_LINE_LEN], int *count,
             operands[op_idx][char_idx] = '\0';
             op_idx++;
             char_idx = 0;
+
+            /* do not go past the operand array size */
             if (op_idx >= max_ops) {
                 return false;
             }
@@ -275,17 +308,25 @@ boolean extract_operands(char line[], char operands[][MAX_LINE_LEN], int *count,
     operands[op_idx][char_idx] = '\0';
     *count = op_idx + 1;
 
+    /* remove spaces from the beginning and end of each operand */
     for (op_idx = 0; op_idx < *count; op_idx++) {
         start = 0;
         skip_spaces(operands[op_idx], &start);
-        
-        end = strlen(operands[op_idx]) - 1;
+
+        end = (int)strlen(operands[op_idx]);
+        if (end > 0) {
+            end--;
+        } else {
+            end = -1; /* empty operand */
+        }
+
         while (end > start && (operands[op_idx][end] == ' ' || operands[op_idx][end] == '\t')) {
             end--;
         }
-        
+
         operands[op_idx][end + 1] = '\0';
-        
+
+        /* move the operand to the start of its buffer after removing leading spaces */
         if (start > 0) {
             memmove(operands[op_idx], operands[op_idx] + start, end - start + 2);
         }

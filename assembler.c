@@ -1,3 +1,11 @@
+/*
+ * file: assembler.c
+ * description: the entry point of the assembler program
+ * it goes over every file given on the command line and checks that the name ends with .as
+ * for each file it runs the pre assembler and both passes and then builds the output files
+ * if a memory allocation fails it stops the whole program
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -14,10 +22,10 @@
  * function: has_as_extension
  * input: file name string
  * output: true if file ends with .as false otherwise
- * operation: validates that input filename has .as extension
+ * operation: checks if the file name has .as extension
  */
 static boolean has_as_extension(const char file_name[]) {
-    size_t length; /* file name length */
+    size_t length; /* length of the file name */
 
     if (file_name == NULL) {
         return false;
@@ -25,6 +33,7 @@ static boolean has_as_extension(const char file_name[]) {
 
     length = strlen(file_name);
 
+    /* input files must end with .as */
     if (length >= 3 && strcmp(file_name + length - 3, ".as") == 0) {
         return true;
     }
@@ -34,9 +43,9 @@ static boolean has_as_extension(const char file_name[]) {
 
 /*
  * function: initialize_memory_state
- * input: memory state struct pointer
+ * input: pointer to memory state
  * output: none
- * operation: sets initial clean values for memory state fields
+ * operation: sets the memory state to its starting values
  */
 static void initialize_memory_state(memory_state *state) {
     state->code_image = NULL;
@@ -53,9 +62,9 @@ static void initialize_memory_state(memory_state *state) {
 
 /*
  * function: free_file_resources
- * input: state pointer symbol table pointer and external usages pointer
+ * input: memory state symbol table and external usages
  * output: none
- * operation: safely frees all allocated memory for a single file run
+ * operation: frees the memory used while processing one file
  */
 static void free_file_resources(memory_state *state, symbol_node *symbol_table, external_usage_node *external_usages) {
     free_symbol_table(symbol_table);
@@ -66,6 +75,7 @@ static void free_file_resources(memory_state *state, symbol_node *symbol_table, 
     free(state->code_image);
     free(state->data_image);
 
+    /* clear the pointers after freeing their memory */
     state->code_image = NULL;
     state->data_image = NULL;
     state->refs_head = NULL;
@@ -75,22 +85,24 @@ static void free_file_resources(memory_state *state, symbol_node *symbol_table, 
 /*
  * function: main
  * input: argument count and argument vector
- * output: status code zero
- * operation: controls main execution loop for input files through assembler pipeline
+ * output: zero on normal termination and one on memory allocation failure
+ * operation: runs the assembler stages for every input file
  */
 int main(int argc, char *argv[]) {
-    int i; /* argument loop index */
+    int i; /* current input file index */
 
     if (argc < 2) {
         printf("error no input files provided\n");
         return 0;
     }
 
+    /* process every input file separately */
     for (i = 1; i < argc; i++) {
-        char *am_filename; /* pre assembler output name */
-        memory_state state; /* assembler memory structures */
-        symbol_node *symbol_table; /* global symbol table */
-        external_usage_node *external_usages; /* external records */
+        char *am_filename; /* name of the pre assembler output file */
+        memory_state state; /* memory used while processing the file */
+        symbol_node *symbol_table; /* symbol table of the current file */
+        external_usage_node *external_usages; /* uses of external symbols */
+        boolean memory_error = false;
 
         am_filename = NULL;
         symbol_table = NULL;
@@ -103,36 +115,58 @@ int main(int argc, char *argv[]) {
             continue;
         }
 
-        remove_output_files(argv[i]);
+        remove_output_files(argv[i], &memory_error);
+        if (memory_error) {
+            printf("internal error memory allocation failed\n");
+            return 1;
+        }
 
-        if (!run_pre_assembler(argv[i])) {
+        if (!run_pre_assembler(argv[i], &memory_error)) {
             printf("error pre assembler failed for file %s\n", argv[i]);
+            if (memory_error) {
+                return 1;
+            }
             continue;
         }
 
         am_filename = replace_extension(argv[i], ".am");
         if (am_filename == NULL) {
             printf("internal error memory allocation failed\n");
-            continue;
+            free_file_resources(&state, symbol_table, external_usages);
+            return 1;
         }
 
-        if (!run_first_pass(am_filename, &state, &symbol_table)) {
+        /* external usages are still empty before the second pass */
+        if (!run_first_pass(am_filename, &state, &symbol_table, &memory_error)) {
             printf("error first pass failed for file %s\n", argv[i]);
             free_file_resources(&state, symbol_table, external_usages);
             free(am_filename);
+            if (memory_error) {
+                return 1;
+            }
             continue;
         }
 
-        if (!run_second_pass(&state, symbol_table, &external_usages)) {
+        if (!run_second_pass(&state, symbol_table, &external_usages, &memory_error)) {
             printf("error second pass failed for file %s\n", argv[i]);
             free_file_resources(&state, symbol_table, external_usages);
             free(am_filename);
+            if (memory_error) {
+                return 1;
+            }
             continue;
         }
 
-        if (!create_output_files(argv[i], &state, symbol_table, external_usages)) {
+        if (!create_output_files(argv[i], &state, symbol_table, external_usages, &memory_error)) {
+        if (memory_error) {
+            printf("internal error memory allocation failed\n");
+            free_file_resources(&state, symbol_table, external_usages);
+            free(am_filename);
+            return 1;
+     } else {
             printf("error generating output files for file %s\n", argv[i]);
         }
+    }
 
         free_file_resources(&state, symbol_table, external_usages);
         free(am_filename);
